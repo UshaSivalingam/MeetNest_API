@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="MeetNest.API/MeetNest.API.csproj" />
+  <Project Path="MeetNest.Application/MeetNest.Application.csproj" />
+  <Project Path="MeetNest.Domain/MeetNest.Domain.csproj" />
+  <Project Path="MeetNest.Infrastructure/MeetNest.Infrastructure.csproj" />
+</Solution>
