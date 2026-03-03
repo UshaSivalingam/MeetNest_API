@@ -22,6 +22,7 @@ public class Booking
 
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
 
+    public string? Notes { get; set; }
     // Audit Fields
     public int? ActionBy { get; set; }  // Admin Id
     public DateTime? ActionAt { get; set; }

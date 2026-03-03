@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-
 namespace MeetNest.API;
 
 public static class ProgramHelper
@@ -63,6 +62,7 @@ public static class ProgramHelper
                                                  Encoding.UTF8.GetBytes(config["Jwt:Key"]!))
                 };
             });
+
 
         // ── CORS ──────────────────────────────────────────────────────────────
         services.AddCors(options =>

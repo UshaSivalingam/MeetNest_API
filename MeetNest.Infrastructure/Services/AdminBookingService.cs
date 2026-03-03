@@ -15,14 +15,17 @@ public class AdminBookingService : IAdminBookingService
     }
 
     public async Task<PagedAdminBookingsDto> GetAllAsync(AdminBookingFilterDto filter)
-    {
-        return await _bookingRepo.GetAllAsync(filter);
-    }
+        => await _bookingRepo.GetAllAsync(filter);
 
     public async Task<AdminBookingResponseDto?> GetByIdAsync(int id)
     {
         var booking = await _bookingRepo.GetByIdWithDetailsAsync(id);
         if (booking is null) return null;
+
+        // Fetch other pending bookings for the same room/slot so admin can
+        // compare priorities before deciding
+        var conflicts = await _bookingRepo.GetConflictingPendingBookings(
+            booking.RoomId, booking.StartTime, booking.EndTime, booking.Id);
 
         return new AdminBookingResponseDto
         {
@@ -39,13 +42,26 @@ public class AdminBookingService : IAdminBookingService
             Status = booking.Status.ToString(),
             Priority = booking.Priority.ToString(),
             OverrideReason = booking.OverrideReason,
+            Notes = booking.Notes,
             ActionBy = booking.ActionBy,
             ActionAt = booking.ActionAt,
             CreatedAt = booking.CreatedAt,
             Facilities = booking.Room.RoomFacilities
-                                .Where(rf => rf.Facility.IsActive)
-                                .Select(rf => rf.Facility.Name)
-                                .ToList()
+                                    .Where(rf => rf.Facility.IsActive)
+                                    .Select(rf => rf.Facility.Name)
+                                    .ToList(),
+            // ✅ Conflicting pending bookings for admin to see before deciding
+            ConflictingBookings = conflicts.Select(c => new ConflictingBookingDto
+            {
+                Id = c.Id,
+                EmployeeName = c.User.FullName,
+                EmployeeEmail = c.User.Email,
+                Priority = c.Priority.ToString(),
+                Notes = c.Notes,
+                StartTime = c.StartTime,
+                EndTime = c.EndTime,
+                CreatedAt = c.CreatedAt,
+            }).ToList()
         };
     }
 
@@ -57,19 +73,34 @@ public class AdminBookingService : IAdminBookingService
         if (booking.Status != BookingStatus.Pending)
             throw new Exception("Only pending bookings can be approved.");
 
-        // Check for conflicts unless force override
-        var conflicts = (await _bookingRepo.GetApprovedBookingsForRoom(booking.RoomId))
+        // Check for conflicts with already-approved bookings
+        var approvedConflicts = (await _bookingRepo.GetApprovedBookingsForRoom(booking.RoomId))
             .Any(b => booking.StartTime < b.EndTime && booking.EndTime > b.StartTime);
 
-        if (conflicts && !body.Force)
-            throw new Exception("Time conflict exists with another approved booking. Use force=true to override.");
+        if (approvedConflicts && !body.Force)
+            throw new Exception("Time conflict with an already approved booking. Use force=true to override.");
 
         booking.Status = BookingStatus.Approved;
         booking.ActionBy = adminId;
         booking.ActionAt = DateTime.UtcNow;
         booking.OverrideReason = body.Force ? (body.Reason ?? "Admin override") : body.Reason;
-
+        booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
+
+        // ✅ Auto-reject all other pending bookings for the same room/slot
+        // with a clear reason so employees know why they were rejected
+        var pendingConflicts = await _bookingRepo.GetConflictingPendingBookings(
+            booking.RoomId, booking.StartTime, booking.EndTime, bookingId);
+
+        foreach (var conflict in pendingConflicts)
+        {
+            conflict.Status = BookingStatus.Rejected;
+            conflict.ActionBy = adminId;
+            conflict.ActionAt = DateTime.UtcNow;
+            conflict.OverrideReason = "Another booking was approved for this time slot.";
+            conflict.UpdatedAt = DateTime.UtcNow;
+            await _bookingRepo.UpdateAsync(conflict);
+        }
     }
 
     public async Task RejectAsync(int bookingId, int adminId, BookingActionBodyDto body)
@@ -84,7 +115,7 @@ public class AdminBookingService : IAdminBookingService
         booking.ActionBy = adminId;
         booking.ActionAt = DateTime.UtcNow;
         booking.OverrideReason = body.Reason;
-
+        booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
     }
 }

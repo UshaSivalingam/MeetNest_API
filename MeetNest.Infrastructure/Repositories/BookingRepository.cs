@@ -27,19 +27,16 @@ public class BookingRepository : IBookingRepository
             .Where(b => b.UserId == userId)
             .AsQueryable();
 
-        // Status filter
         if (!string.IsNullOrWhiteSpace(filter.Status) &&
             Enum.TryParse<BookingStatus>(filter.Status, true, out var status))
             query = query.Where(b => b.Status == status);
 
-        // Search by room name
         if (!string.IsNullOrWhiteSpace(filter.Search))
         {
             var s = filter.Search.Trim().ToLower();
             query = query.Where(b => b.Room.Name.ToLower().Contains(s));
         }
 
-        // Date range
         if (filter.From.HasValue) query = query.Where(b => b.StartTime >= filter.From.Value);
         if (filter.To.HasValue) query = query.Where(b => b.EndTime <= filter.To.Value);
 
@@ -59,7 +56,7 @@ public class BookingRepository : IBookingRepository
         };
     }
 
-    // ── Admin: all bookings — already paged (unchanged) ───────────────────────
+    // ── Admin: all bookings — paged ───────────────────────────────────────────
     public async Task<PagedAdminBookingsDto> GetAllAsync(AdminBookingFilterDto filter)
     {
         var query = _context.Bookings
@@ -80,7 +77,8 @@ public class BookingRepository : IBookingRepository
 
         var totalCount = await query.CountAsync();
         var items = await query
-            .OrderByDescending(b => b.CreatedAt)
+            .OrderByDescending(b => b.Priority)   // High priority first
+            .ThenByDescending(b => b.CreatedAt)
             .Skip((filter.Page - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .Select(b => MapToAdminDto(b))
@@ -94,6 +92,31 @@ public class BookingRepository : IBookingRepository
             PageSize = filter.PageSize
         };
     }
+
+    // ── FIX: only block if an APPROVED booking exists for same slot ───────────
+    // Previously blocked on any non-cancelled booking — this prevented multiple
+    // employees from submitting for the same slot. Now only Approved blocks.
+    public async Task<bool> IsRoomBookedAsync(int roomId, DateTime startTime, DateTime endTime)
+        => await _context.Bookings.AnyAsync(b =>
+            b.RoomId == roomId &&
+            b.Status == BookingStatus.Approved &&   // ✅ Only Approved blocks new bookings
+            startTime < b.EndTime &&
+            endTime > b.StartTime);
+
+    // ── NEW: get other pending bookings that clash with same room/slot ────────
+    public async Task<List<Booking>> GetConflictingPendingBookings(
+        int roomId, DateTime startTime, DateTime endTime, int excludeBookingId)
+        => await _context.Bookings
+            .Include(b => b.User)
+            .Where(b =>
+                b.RoomId == roomId &&
+                b.Id != excludeBookingId &&
+                b.Status == BookingStatus.Pending &&
+                startTime < b.EndTime &&
+                endTime > b.StartTime)
+            .OrderByDescending(b => b.Priority)   // High priority first
+            .ThenBy(b => b.CreatedAt)             // Earlier request first on tie
+            .ToListAsync();
 
     // ── Existing helpers ──────────────────────────────────────────────────────
     public async Task AddAsync(Booking booking)
@@ -131,13 +154,6 @@ public class BookingRepository : IBookingRepository
             .Where(b => b.RoomId == roomId && b.Status == BookingStatus.Approved)
             .ToListAsync();
 
-    public async Task<bool> IsRoomBookedAsync(int roomId, DateTime startTime, DateTime endTime)
-        => await _context.Bookings.AnyAsync(b =>
-            b.RoomId == roomId &&
-            b.Status != BookingStatus.Cancelled &&
-            startTime < b.EndTime &&
-            endTime > b.StartTime);
-
     public async Task<int> CountByStatusAsync(string status)
     {
         if (!Enum.TryParse<BookingStatus>(status, true, out var s)) return 0;
@@ -168,12 +184,14 @@ public class BookingRepository : IBookingRepository
         Status = b.Status.ToString(),
         Priority = b.Priority.ToString(),
         OverrideReason = b.OverrideReason,
+        Notes = b.Notes,
         ActionBy = b.ActionBy,
         ActionAt = b.ActionAt,
         CreatedAt = b.CreatedAt,
         Facilities = b.Room.RoomFacilities
-                          .Where(rf => rf.Facility.IsActive)
-                          .Select(rf => rf.Facility.Name)
-                          .ToList()
+                           .Where(rf => rf.Facility.IsActive)
+                           .Select(rf => rf.Facility.Name)
+                           .ToList()
+        // ConflictingBookings populated separately in GetByIdAsync (service layer)
     };
 }

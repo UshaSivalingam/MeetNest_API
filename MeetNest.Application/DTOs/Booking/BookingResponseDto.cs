@@ -1,5 +1,4 @@
-﻿// MeetNest.Application/DTOs/Booking/BookingResponseDto.cs
-// Extends the base DTO with all fields the frontend My Bookings page reads.
+﻿using MeetNest.Domain.Enums;
 
 namespace MeetNest.Application.DTOs.Booking;
 
@@ -14,6 +13,8 @@ public class BookingResponseDto
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
     public string? OverrideReason { get; set; }
+    public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
+    public DateTime? ActionAt { get; set; }
     public List<string> Facilities { get; set; } = new();
 }

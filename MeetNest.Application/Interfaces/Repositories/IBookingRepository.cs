@@ -1,5 +1,4 @@
-﻿
-using MeetNest.Application.DTOs;
+﻿using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Admin;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Domain.Entities;
@@ -8,7 +7,7 @@ namespace MeetNest.Application.Interfaces.Repositories;
 
 public interface IBookingRepository
 {
-    // ── Existing (unchanged) ──────────────────────────────────────────────────
+    // ── Existing ──────────────────────────────────────────────────────────────
     Task AddAsync(Booking booking);
     Task<Booking?> GetByIdAsync(int id);
     Task<List<Booking>> GetRoomBookingsAsync(int roomId);
@@ -20,9 +19,11 @@ public interface IBookingRepository
     Task<int> CountTotalAsync();
     Task<List<Booking>> GetRecentAsync(int count);
 
-    // ── Updated: admin bookings — already paged (unchanged) ───────────────────
+    // ── Paged queries ─────────────────────────────────────────────────────────
     Task<PagedAdminBookingsDto> GetAllAsync(AdminBookingFilterDto filter);
-
-    // ── Updated: employee my-bookings — now paged + filtered ──────────────────
     Task<PagedResult<Booking>> GetEmployeeBookingsAsync(int userId, MyBookingFilterDto filter);
+
+    // ── NEW: get other pending bookings that clash with a given room/slot ─────
+    Task<List<Booking>> GetConflictingPendingBookings(
+        int roomId, DateTime startTime, DateTime endTime, int excludeBookingId);
 }

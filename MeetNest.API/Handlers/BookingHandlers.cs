@@ -1,6 +1,8 @@
-﻿using MeetNest.Application.DTOs.Booking;
+﻿using MeetNest.Application.DTOs.Admin;
+using MeetNest.Application.DTOs.Booking;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Services;
+using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
 namespace MeetNest.API.Handlers;
@@ -9,7 +11,7 @@ public static class BookingHandlers
 {
     public static async Task<IResult> Create(
         ClaimsPrincipal user,
-        CreateBookingDto dto,
+         [FromBody] CreateBookingDto dto,
         IBookingService bookingService)
     {
         try
@@ -64,15 +66,21 @@ public static class BookingHandlers
     }
 
     public static async Task<IResult> Reject(
-        int id, ClaimsPrincipal user, IBookingService bookingService)
+        int id,
+        BookingActionBodyDto body,
+        ClaimsPrincipal user,
+        IAdminBookingService service)
     {
         try
         {
             var adminId = int.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            await bookingService.RejectAsync(id, adminId);
+            await service.RejectAsync(id, adminId, body);   // ✅ full body, not body.Reason
             return Results.Ok(new { Message = "Booking rejected." });
         }
-        catch (Exception ex) { return Results.BadRequest(ex.Message); }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(ex.Message);
+        }
     }
 
     public static async Task<IResult> Cancel(

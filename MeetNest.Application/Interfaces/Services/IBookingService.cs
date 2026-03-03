@@ -10,5 +10,5 @@ public interface IBookingService
     Task<PagedResult<BookingResponseDto>> GetMyBookingsAsync(int employeeId, MyBookingFilterDto filter);
     Task CancelAsync(int bookingId, int employeeId);
     Task ApproveAsync(int bookingId, int adminId, bool force = false, string? reason = null);
-    Task RejectAsync(int bookingId, int adminId);
+    Task RejectAsync(int bookingId, int adminId, string? reason = null);
 }

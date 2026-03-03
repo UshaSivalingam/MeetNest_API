@@ -1,5 +1,4 @@
-﻿
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using MeetNest.Application.DTOs.Admin;
 using MeetNest.Application.Interfaces.Services;
 
@@ -75,15 +74,15 @@ public static class AdminBookingHandlers
 
     // PUT /api/admin/bookings/{id}/reject
     public static async Task<IResult> Reject(
-        int id,
-        BookingActionBodyDto body,
-        ClaimsPrincipal user,
-        IAdminBookingService service)
+      int id,
+      BookingActionBodyDto body,
+      ClaimsPrincipal user,
+      IAdminBookingService service)
     {
         try
         {
             var adminId = int.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            await service.RejectAsync(id, adminId, body);
+            await service.RejectAsync(id, adminId, body);   // ✅ full body, not body.Reason
             return Results.Ok(new { Message = "Booking rejected." });
         }
         catch (Exception ex)

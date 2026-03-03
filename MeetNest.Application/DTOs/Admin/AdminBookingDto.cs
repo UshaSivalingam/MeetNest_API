@@ -15,11 +15,28 @@ public class AdminBookingResponseDto
     public string Status { get; set; } = string.Empty;
     public string Priority { get; set; } = string.Empty;
     public string? OverrideReason { get; set; }
+    public string? Notes { get; set; }
     public int? ActionBy { get; set; }
     public DateTime? ActionAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public List<string> Facilities { get; set; } = new();
+
+    // Conflicting pending bookings for same room/slot — shown to admin
+    public List<ConflictingBookingDto> ConflictingBookings { get; set; } = new();
 }
+
+public class ConflictingBookingDto
+{
+    public int Id { get; set; }
+    public string EmployeeName { get; set; } = string.Empty;
+    public string EmployeeEmail { get; set; } = string.Empty;
+    public string Priority { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+    public DateTime StartTime { get; set; }
+    public DateTime EndTime { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
 
 public class AdminBookingFilterDto
 {

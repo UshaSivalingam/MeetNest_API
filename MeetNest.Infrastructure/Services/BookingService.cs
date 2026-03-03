@@ -24,19 +24,34 @@ public class BookingService : IBookingService
 
     public async Task<int> CreateAsync(int userId, CreateBookingDto dto)
     {
-        ValidateTimeline(dto.StartTime, dto.EndTime);
+        // ✅ FIX: Convert to UTC FIRST, then validate.
+        // Previously ValidateTimeline ran on raw dto.StartTime before UTC conversion,
+        // so "start < DateTime.UtcNow" was comparing an unspecified/local time against UTC —
+        // this caused wrong dates to be stored and the past-check to behave incorrectly.
+        var startUtc = dto.StartTime.Kind == DateTimeKind.Utc
+            ? dto.StartTime
+            : DateTime.SpecifyKind(dto.StartTime, DateTimeKind.Utc);
 
-        var room = await _roomRepo.GetByIdAsync(dto.RoomId) ?? throw new Exception("Room not found.");
-        var user = await _userRepo.GetByIdAsync(userId) ?? throw new Exception("User not found.");
+        var endUtc = dto.EndTime.Kind == DateTimeKind.Utc
+            ? dto.EndTime
+            : DateTime.SpecifyKind(dto.EndTime, DateTimeKind.Utc);
+
+        // Validate AFTER UTC conversion so DateTime.UtcNow comparison is apples-to-apples
+        ValidateTimeline(startUtc, endUtc);
+
+        var room = await _roomRepo.GetByIdAsync(dto.RoomId)
+            ?? throw new Exception("Room not found.");
+        var user = await _userRepo.GetByIdAsync(userId)
+            ?? throw new Exception("User not found.");
 
         if (room.BranchId != user.BranchId)
-            throw new Exception("Cannot book room from another branch.");
+            throw new Exception("Cannot book a room from another branch.");
 
-        var startUtc = DateTime.SpecifyKind(dto.StartTime, DateTimeKind.Utc);
-        var endUtc = DateTime.SpecifyKind(dto.EndTime, DateTimeKind.Utc);
-
+        // Only blocks if an APPROVED booking already exists for this slot.
+        // Multiple employees CAN submit pending bookings for the same slot —
+        // the admin decides who gets it.
         if (await _bookingRepo.IsRoomBookedAsync(dto.RoomId, startUtc, endUtc))
-            throw new Exception("Room is already booked for the selected time slot.");
+            throw new Exception("This room already has an approved booking for the selected time slot.");
 
         var booking = new Booking
         {
@@ -45,6 +60,8 @@ public class BookingService : IBookingService
             BranchId = room.BranchId,
             StartTime = startUtc,
             EndTime = endUtc,
+            Priority = dto.Priority,
+            Notes = dto.Notes,
             Status = BookingStatus.Pending
         };
 
@@ -53,6 +70,37 @@ public class BookingService : IBookingService
     }
 
     public async Task<PagedResult<BookingResponseDto>> GetMyBookingsAsync(
+    int employeeId, MyBookingFilterDto filter)
+    {
+        var paged = await _bookingRepo.GetEmployeeBookingsAsync(employeeId, filter);
+
+        return new PagedResult<BookingResponseDto>
+        {
+            Items = paged.Items.Select(b => new BookingResponseDto
+            {
+                Id = b.Id,
+                RoomName = b.Room.Name,
+                BranchName = b.Branch?.Name ?? string.Empty,
+                EmployeeName = b.User.FullName,
+                StartTime = b.StartTime,
+                EndTime = b.EndTime,
+                Status = b.Status.ToString(),
+                Priority = b.Priority.ToString(),
+                OverrideReason = b.OverrideReason,
+                Notes = b.Notes,
+                CreatedAt = b.CreatedAt,
+                ActionAt = b.ActionAt,
+                Facilities = b.Room.RoomFacilities
+                                     .Where(rf => rf.Facility.IsActive)
+                                     .Select(rf => rf.Facility.Name)
+                                     .ToList()
+            }).ToList(),
+            TotalCount = paged.TotalCount,
+            Page = paged.Page,
+            PageSize = paged.PageSize
+        };
+    }
+    /*public async Task<PagedResult<BookingResponseDto>> GetMyBookingsAsync(
         int employeeId, MyBookingFilterDto filter)
     {
         var paged = await _bookingRepo.GetEmployeeBookingsAsync(employeeId, filter);
@@ -62,63 +110,105 @@ public class BookingService : IBookingService
             {
                 Id = b.Id,
                 RoomName = b.Room.Name,
+                BranchName = b.Branch?.Name ?? string.Empty,
                 EmployeeName = b.User.FullName,
                 StartTime = b.StartTime,
                 EndTime = b.EndTime,
                 Status = b.Status.ToString(),
+                Priority = b.Priority.ToString(),
+                OverrideReason = b.OverrideReason,
+                Notes = b.Notes,
+                CreatedAt = b.CreatedAt,
+                ActionAt = b.ActionAt,
                 Facilities = b.Room.RoomFacilities
-                                 .Where(rf => rf.Facility.IsActive)
-                                 .Select(rf => rf.Facility.Name)
-                                 .ToList()
+                                     .Where(rf => rf.Facility.IsActive)
+                                     .Select(rf => rf.Facility.Name)
+                                     .ToList()
             }).ToList(),
             TotalCount = paged.TotalCount,
             Page = paged.Page,
             PageSize = paged.PageSize
         };
-    }
+    }*/
 
     public async Task CancelAsync(int bookingId, int userId)
     {
-        var booking = await _bookingRepo.GetByIdAsync(bookingId) ?? throw new Exception("Booking not found.");
-        if (booking.UserId != userId) throw new Exception("Unauthorized.");
+        var booking = await _bookingRepo.GetByIdAsync(bookingId)
+            ?? throw new Exception("Booking not found.");
+
+        if (booking.UserId != userId)
+            throw new Exception("Unauthorized.");
+
         if (booking.Status == BookingStatus.Approved && booking.StartTime <= DateTime.UtcNow)
             throw new Exception("Cannot cancel an ongoing booking.");
+
+        if (booking.Status == BookingStatus.Rejected || booking.Status == BookingStatus.Cancelled)
+            throw new Exception("Booking is already closed.");
+
         booking.Status = BookingStatus.Cancelled;
+        booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
     }
 
     public async Task ApproveAsync(int bookingId, int adminId, bool force = false, string? reason = null)
     {
-        var booking = await _bookingRepo.GetByIdAsync(bookingId) ?? throw new Exception("Booking not found.");
-        if (booking.Status != BookingStatus.Pending) throw new Exception("Only pending bookings can be approved.");
+        var booking = await _bookingRepo.GetByIdAsync(bookingId)
+            ?? throw new Exception("Booking not found.");
+
+        if (booking.Status != BookingStatus.Pending)
+            throw new Exception("Only pending bookings can be approved.");
 
         var conflicts = (await _bookingRepo.GetApprovedBookingsForRoom(booking.RoomId))
             .Any(b => booking.StartTime < b.EndTime && booking.EndTime > b.StartTime);
 
-        if (conflicts && !force) throw new Exception("Time conflict exists.");
+        if (conflicts && !force)
+            throw new Exception("Time conflict with an already approved booking. Use force=true to override.");
 
         booking.Status = BookingStatus.Approved;
         booking.ActionBy = adminId;
         booking.ActionAt = DateTime.UtcNow;
         booking.OverrideReason = force ? (reason ?? "Admin override") : reason;
+        booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
+
+        // Auto-reject all other pending bookings for the same room/slot
+        var pendingConflicts = await _bookingRepo.GetConflictingPendingBookings(
+            booking.RoomId, booking.StartTime, booking.EndTime, bookingId);
+
+        foreach (var conflict in pendingConflicts)
+        {
+            conflict.Status = BookingStatus.Rejected;
+            conflict.ActionBy = adminId;
+            conflict.ActionAt = DateTime.UtcNow;
+            conflict.OverrideReason = "Another booking was approved for this time slot.";
+            conflict.UpdatedAt = DateTime.UtcNow;
+            await _bookingRepo.UpdateAsync(conflict);
+        }
     }
 
-    public async Task RejectAsync(int bookingId, int adminId)
+    public async Task RejectAsync(int bookingId, int adminId, string? reason = null)
     {
-        var booking = await _bookingRepo.GetByIdAsync(bookingId) ?? throw new Exception("Booking not found.");
+        var booking = await _bookingRepo.GetByIdAsync(bookingId)
+            ?? throw new Exception("Booking not found.");
+
+        if (booking.Status != BookingStatus.Pending)
+            throw new Exception("Only pending bookings can be rejected.");
+
         booking.Status = BookingStatus.Rejected;
         booking.ActionBy = adminId;
         booking.ActionAt = DateTime.UtcNow;
+        booking.OverrideReason = reason;
+        booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
     }
 
-    private static void ValidateTimeline(DateTime start, DateTime end)
+    // ✅ Receives already-UTC values — DateTime.UtcNow comparison is now correct
+    private static void ValidateTimeline(DateTime startUtc, DateTime endUtc)
     {
-        if (start >= end) throw new Exception("Invalid time range.");
-        if (start < DateTime.UtcNow) throw new Exception("Cannot book in the past.");
-        var duration = end - start;
-        if (duration.TotalMinutes < 15) throw new Exception("Minimum duration is 15 minutes.");
-        if (duration.TotalHours > 8) throw new Exception("Maximum duration is 8 hours.");
+        if (startUtc >= endUtc) throw new Exception("End time must be after start time.");
+        if (startUtc < DateTime.UtcNow) throw new Exception("Cannot book in the past.");
+        var duration = endUtc - startUtc;
+        if (duration.TotalMinutes < 15) throw new Exception("Minimum booking duration is 15 minutes.");
+        if (duration.TotalHours > 8) throw new Exception("Maximum booking duration is 8 hours.");
     }
 }
