@@ -24,10 +24,7 @@ public class BookingService : IBookingService
 
     public async Task<int> CreateAsync(int userId, CreateBookingDto dto)
     {
-        // ✅ FIX: Convert to UTC FIRST, then validate.
-        // Previously ValidateTimeline ran on raw dto.StartTime before UTC conversion,
-        // so "start < DateTime.UtcNow" was comparing an unspecified/local time against UTC —
-        // this caused wrong dates to be stored and the past-check to behave incorrectly.
+        // ── 1. Normalise to UTC ───────────────────────────────────────
         var startUtc = dto.StartTime.Kind == DateTimeKind.Utc
             ? dto.StartTime
             : DateTime.SpecifyKind(dto.StartTime, DateTimeKind.Utc);
@@ -36,23 +33,33 @@ public class BookingService : IBookingService
             ? dto.EndTime
             : DateTime.SpecifyKind(dto.EndTime, DateTimeKind.Utc);
 
-        // Validate AFTER UTC conversion so DateTime.UtcNow comparison is apples-to-apples
         ValidateTimeline(startUtc, endUtc);
 
+        // ── 2. Load room + user ───────────────────────────────────────
         var room = await _roomRepo.GetByIdAsync(dto.RoomId)
             ?? throw new Exception("Room not found.");
+
         var user = await _userRepo.GetByIdAsync(userId)
             ?? throw new Exception("User not found.");
 
         if (room.BranchId != user.BranchId)
             throw new Exception("Cannot book a room from another branch.");
 
-        // Only blocks if an APPROVED booking already exists for this slot.
-        // Multiple employees CAN submit pending bookings for the same slot —
-        // the admin decides who gets it.
+        // ── 3. Conflict check — always block on Approved overlaps ─────
+        // (Pending overlaps are allowed; admin decides who wins)
         if (await _bookingRepo.IsRoomBookedAsync(dto.RoomId, startUtc, endUtc))
             throw new Exception("This room already has an approved booking for the selected time slot.");
 
+        // ── 4. Decide initial status based on ApprovalRequired ────────
+        //
+        //   ApprovalRequired = true  → status stays Pending (admin must act)
+        //   ApprovalRequired = false → status set to Approved immediately
+        //
+        var initialStatus = room.ApprovalRequired
+            ? BookingStatus.Pending
+            : BookingStatus.Approved;
+
+        // ── 5. Persist ────────────────────────────────────────────────
         var booking = new Booking
         {
             RoomId = dto.RoomId,
@@ -62,7 +69,11 @@ public class BookingService : IBookingService
             EndTime = endUtc,
             Priority = dto.Priority,
             Notes = dto.Notes,
-            Status = BookingStatus.Pending
+            Status = initialStatus,
+
+            // If auto-approved, record system as the actor
+            ActionBy = initialStatus == BookingStatus.Approved ? userId : null,
+            ActionAt = initialStatus == BookingStatus.Approved ? DateTime.UtcNow : null,
         };
 
         await _bookingRepo.AddAsync(booking);

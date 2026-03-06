@@ -21,56 +21,44 @@ public class RoomFacilityService : IRoomFacilityService
         _roomRepo = roomRepo;
     }
 
-    // ✅ Assign Facility to Room
     public async Task AssignFacilityAsync(CreateRoomFacilityDto dto)
     {
-        // 🔎 Validate Room exists
         var room = await _roomRepo.GetByIdAsync(dto.RoomId);
-        if (room == null)
-            throw new Exception("Room not found.");
+        if (room == null) throw new Exception("Room not found.");
 
-        // 🔎 Validate Facility exists & active
         var facility = await _facilityRepo.GetByIdAsync(dto.FacilityId);
-        if (facility == null || !facility.IsActive)
-            throw new Exception("Facility not found or inactive.");
+        if (facility == null || !facility.IsActive) throw new Exception("Facility not found or inactive.");
 
-        // 🔒 Prevent duplicate assignment
-        var exists = await _repo
-            .ExistsAsync(dto.RoomId, dto.FacilityId);
+        var exists = await _repo.ExistsAsync(dto.RoomId, dto.FacilityId);
+        if (exists) throw new Exception("Facility already assigned to this room.");
 
-        if (exists)
-            throw new Exception("Facility already assigned to this room.");
-
-        var entity = new RoomFacility
-        {
-            RoomId = dto.RoomId,
-            FacilityId = dto.FacilityId
-        };
-
-        await _repo.AddAsync(entity);
+        await _repo.AddAsync(new RoomFacility { RoomId = dto.RoomId, FacilityId = dto.FacilityId });
         await _repo.SaveChangesAsync();
     }
 
-    // ✅ Get Facilities By Room
-    public async Task<List<string>> GetFacilitiesByRoomAsync(int roomId)
+    // ← FIXED: was returning List<string> (names only — no IDs!)
+    //          now returns List<RoomFacilityItemDto> with FacilityId
+    public async Task<List<RoomFacilityItemDto>> GetFacilitiesByRoomAsync(int roomId)
     {
         var list = await _repo.GetByRoomIdAsync(roomId);
 
         return list
             .Where(x => x.Facility.IsActive)
-            .Select(x => x.Facility.Name)
+            .Select(x => new RoomFacilityItemDto
+            {
+                FacilityId = x.FacilityId,
+                Name = x.Facility.Name,
+                Icon = x.Facility.Icon ?? "🔧"
+            })
             .ToList();
     }
+
     public async Task<bool> RemoveFacilityAsync(int roomId, int facilityId)
     {
         var entity = await _repo.GetAsync(roomId, facilityId);
-
-        if (entity == null)
-            return false;
-
+        if (entity == null) return false;
         await _repo.RemoveAsync(entity);
         await _repo.SaveChangesAsync();
-
         return true;
     }
 }

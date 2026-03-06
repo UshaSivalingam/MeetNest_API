@@ -1,4 +1,5 @@
 ﻿using MeetNest.Application.DTOs;
+using MeetNest.Application.DTOs.Branch;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Application.Interfaces.Services;
@@ -11,7 +12,7 @@ public class BranchService : IBranchService
     private readonly IBranchRepository _repo;
     public BranchService(IBranchRepository repo) => _repo = repo;
 
-    public Task<PagedResult<Branch>> GetAllAsync(BranchFilterDto filter)
+    public Task<PagedResult<BranchWithStatsDto>> GetAllAsync(BranchFilterDto filter)
         => _repo.GetAllAsync(filter);
 
     public Task<List<Branch>> GetAllSimpleAsync()

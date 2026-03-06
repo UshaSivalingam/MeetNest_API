@@ -3,6 +3,7 @@ using MeetNest.Application.DTOs.Facility;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Application.Interfaces.Services;
+
 namespace MeetNest.Infrastructure.Services;
 
 public class FacilityService : IFacilityService
@@ -42,8 +43,15 @@ public class FacilityService : IFacilityService
 
     public async Task<FacilityResponseDto> CreateAsync(CreateFacilityDto dto)
     {
-        if (await _repo.ExistsByNameAsync(dto.Name)) throw new Exception("Facility already exists.");
-        var facility = new Facility { Name = dto.Name, Description = dto.Description };
+        if (await _repo.ExistsByNameAsync(dto.Name))
+            throw new Exception("Facility already exists.");
+
+        var facility = new Facility
+        {
+            Name = dto.Name,
+            Description = dto.Description,
+            Icon = string.IsNullOrWhiteSpace(dto.Icon) ? "🔧" : dto.Icon   // ← NEW
+        };
         await _repo.AddAsync(facility);
         await _repo.SaveChangesAsync();
         return MapToDto(facility);
@@ -55,8 +63,12 @@ public class FacilityService : IFacilityService
         if (f is null || !f.IsActive) throw new Exception("Facility not found.");
         if (f.Name != dto.Name && await _repo.ExistsByNameAsync(dto.Name))
             throw new Exception("Facility name already exists.");
+
         f.Name = dto.Name;
         f.Description = dto.Description;
+        f.Icon = string.IsNullOrWhiteSpace(dto.Icon) ? "🔧" : dto.Icon;   // ← NEW
+        f.UpdatedAt = DateTime.UtcNow;
+
         _repo.Update(f);
         await _repo.SaveChangesAsync();
     }
@@ -71,10 +83,12 @@ public class FacilityService : IFacilityService
         await _repo.SaveChangesAsync();
     }
 
+    // ← UPDATED: includes Icon
     private static FacilityResponseDto MapToDto(Facility f) => new()
     {
         Id = f.Id,
         Name = f.Name,
-        Description = f.Description
+        Description = f.Description,
+        Icon = f.Icon ?? "🔧"
     };
 }

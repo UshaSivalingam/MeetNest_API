@@ -71,6 +71,7 @@ public class RoomRepository : IRoomRepository
     // ── Simple list: employee room picker (no pagination) ─────────────────────
     public async Task<List<Room>> GetByBranchIdSimpleAsync(int branchId)
         => await _context.Rooms
+            .Include(r => r.Branch)
             .Include(r => r.RoomFacilities).ThenInclude(rf => rf.Facility)
             .Where(r => r.BranchId == branchId && r.IsActive)
             .OrderBy(r => r.Name)

@@ -6,22 +6,24 @@ namespace MeetNest.API.Handlers;
 
 public static class BranchHandlers
 {
-    // GET /api/branches?search=&city=&country=&page=1&pageSize=10
+    // GET /api/branches?search=&city=&country=&sortBy=name&page=1&pageSize=6
     public static async Task<IResult> GetAll(
         IBranchService service,
         string? search = null,
         string? city = null,
         string? country = null,
+        string? sortBy = "name",
         int page = 1,
-        int pageSize = 10)
+        int pageSize = 6)
     {
         var filter = new BranchFilterDto
         {
             Search = search,
             City = city,
             Country = country,
+            SortBy = sortBy,
             Page = page,
-            PageSize = pageSize
+            PageSize = pageSize,
         };
         return Results.Ok(await service.GetAllAsync(filter));
     }
