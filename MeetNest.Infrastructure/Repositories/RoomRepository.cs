@@ -1,7 +1,11 @@
-﻿using MeetNest.Application.DTOs;
+﻿// MeetNest.Infrastructure/Repositories/RoomRepository.cs
+// ── REPLACE your existing file entirely ──
+
+using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Domain.Entities;
+using MeetNest.Domain.Enums;
 using MeetNest.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,7 +16,7 @@ public class RoomRepository : IRoomRepository
     private readonly AppDbContext _context;
     public RoomRepository(AppDbContext context) => _context = context;
 
-    // ── Base query with includes ──────────────────────────────────────────────
+    // ── Base query with includes ──────────────────────────────────
     private IQueryable<Room> BaseQuery() =>
         _context.Rooms
             .Include(r => r.Branch)
@@ -51,7 +55,6 @@ public class RoomRepository : IRoomRepository
         };
     }
 
-    // ── Paged: all rooms (admin) ──────────────────────────────────────────────
     public async Task<PagedResult<Room>> GetAllAsync(RoomFilterDto filter)
     {
         var query = BaseQuery();
@@ -60,7 +63,6 @@ public class RoomRepository : IRoomRepository
         return await ToPagedAsync(query, filter.Page, filter.PageSize);
     }
 
-    // ── Paged: rooms by branch (admin) ────────────────────────────────────────
     public async Task<PagedResult<Room>> GetByBranchIdAsync(int branchId, RoomFilterDto filter)
     {
         var query = BaseQuery().Where(r => r.BranchId == branchId);
@@ -68,17 +70,31 @@ public class RoomRepository : IRoomRepository
         return await ToPagedAsync(query, filter.Page, filter.PageSize);
     }
 
-    // ── Simple list: employee room picker (no pagination) ─────────────────────
     public async Task<List<Room>> GetByBranchIdSimpleAsync(int branchId)
         => await _context.Rooms
             .Include(r => r.Branch)
             .Include(r => r.RoomFacilities).ThenInclude(rf => rf.Facility)
-            .Where(r => r.BranchId == branchId && r.IsActive)
+            .Where(r => r.BranchId == branchId && r.IsActive && !r.UnderMaintenance)
             .OrderBy(r => r.Name)
             .ToListAsync();
 
-    // ── Existing helpers ──────────────────────────────────────────────────────
-    public async Task<Room?> GetByIdAsync(int id) => await _context.Rooms.FindAsync(id);
+    // ── NEW: active bookings for a room ──────────────────────────
+    // Returns Approved or Pending bookings whose EndTime > UtcNow.
+    // These are the bookings that BLOCK room deletion/maintenance.
+    public async Task<List<Booking>> GetActiveBookingsForRoomAsync(int roomId)
+        => await _context.Bookings
+            .Include(b => b.User)
+            .Where(b =>
+                b.RoomId == roomId &&
+                (b.Status == BookingStatus.Approved || b.Status == BookingStatus.Pending) &&
+                b.EndTime > DateTime.UtcNow)
+            .OrderBy(b => b.StartTime)
+            .ToListAsync();
+
+    // ── Existing helpers ──────────────────────────────────────────
+    public async Task<Room?> GetByIdAsync(int id)
+        => await _context.Rooms.FindAsync(id);
+
     public async Task<Room?> GetByIdWithFacilitiesAsync(int id)
         => await _context.Rooms
             .Include(r => r.Branch)

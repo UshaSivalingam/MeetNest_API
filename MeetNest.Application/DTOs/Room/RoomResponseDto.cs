@@ -12,6 +12,7 @@ public class RoomResponseDto
 
     // ── NEW: Returned so the frontend can show the badge ──────────
     public bool ApprovalRequired { get; set; }
+    public bool UnderMaintenance { get; set; }
 
     public List<RoomFacilityDto> Facilities { get; set; } = new();
 }

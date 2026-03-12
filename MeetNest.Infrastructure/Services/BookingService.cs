@@ -1,4 +1,7 @@
-﻿using MeetNest.Application.DTOs;
+﻿// MeetNest.Infrastructure/Services/BookingService.cs
+// ── REPLACE your existing file entirely ──
+
+using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Booking;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Repositories;
@@ -11,20 +14,23 @@ public class BookingService : IBookingService
     private readonly IBookingRepository _bookingRepo;
     private readonly IRoomRepository _roomRepo;
     private readonly IUserRepository _userRepo;
+    private readonly INotificationService _notifService;
 
     public BookingService(
         IBookingRepository bookingRepo,
         IRoomRepository roomRepo,
-        IUserRepository userRepo)
+        IUserRepository userRepo,
+        INotificationService notifService)
     {
         _bookingRepo = bookingRepo;
         _roomRepo = roomRepo;
         _userRepo = userRepo;
+        _notifService = notifService;
     }
 
     public async Task<int> CreateAsync(int userId, CreateBookingDto dto)
     {
-        // ── 1. Normalise to UTC ───────────────────────────────────────
+        // ── 1. Normalise to UTC ───────────────────────────────────
         var startUtc = dto.StartTime.Kind == DateTimeKind.Utc
             ? dto.StartTime
             : DateTime.SpecifyKind(dto.StartTime, DateTimeKind.Utc);
@@ -35,7 +41,7 @@ public class BookingService : IBookingService
 
         ValidateTimeline(startUtc, endUtc);
 
-        // ── 2. Load room + user ───────────────────────────────────────
+        // ── 2. Load room + user ───────────────────────────────────
         var room = await _roomRepo.GetByIdAsync(dto.RoomId)
             ?? throw new Exception("Room not found.");
 
@@ -45,21 +51,22 @@ public class BookingService : IBookingService
         if (room.BranchId != user.BranchId)
             throw new Exception("Cannot book a room from another branch.");
 
-        // ── 3. Conflict check — always block on Approved overlaps ─────
-        // (Pending overlaps are allowed; admin decides who wins)
+        // ── 3. Maintenance check — HARD BLOCK ────────────────────
+        // This is the key fix: if admin marked the room as under maintenance,
+        // no new bookings can be created, period.
+        if (room.UnderMaintenance)
+            throw new Exception("This room is currently under maintenance and cannot be booked.");
+
+        // ── 4. Conflict check — only Approved bookings block ──────
         if (await _bookingRepo.IsRoomBookedAsync(dto.RoomId, startUtc, endUtc))
             throw new Exception("This room already has an approved booking for the selected time slot.");
 
-        // ── 4. Decide initial status based on ApprovalRequired ────────
-        //
-        //   ApprovalRequired = true  → status stays Pending (admin must act)
-        //   ApprovalRequired = false → status set to Approved immediately
-        //
+        // ── 5. Decide initial status based on ApprovalRequired ────
         var initialStatus = room.ApprovalRequired
             ? BookingStatus.Pending
             : BookingStatus.Approved;
 
-        // ── 5. Persist ────────────────────────────────────────────────
+        // ── 6. Persist ────────────────────────────────────────────
         var booking = new Booking
         {
             RoomId = dto.RoomId,
@@ -70,8 +77,6 @@ public class BookingService : IBookingService
             Priority = dto.Priority,
             Notes = dto.Notes,
             Status = initialStatus,
-
-            // If auto-approved, record system as the actor
             ActionBy = initialStatus == BookingStatus.Approved ? userId : null,
             ActionAt = initialStatus == BookingStatus.Approved ? DateTime.UtcNow : null,
         };
@@ -81,7 +86,7 @@ public class BookingService : IBookingService
     }
 
     public async Task<PagedResult<BookingResponseDto>> GetMyBookingsAsync(
-    int employeeId, MyBookingFilterDto filter)
+        int employeeId, MyBookingFilterDto filter)
     {
         var paged = await _bookingRepo.GetEmployeeBookingsAsync(employeeId, filter);
 
@@ -102,49 +107,20 @@ public class BookingService : IBookingService
                 CreatedAt = b.CreatedAt,
                 ActionAt = b.ActionAt,
                 Facilities = b.Room.RoomFacilities
-                                     .Where(rf => rf.Facility.IsActive)
-                                     .Select(rf => rf.Facility.Name)
-                                     .ToList()
+                                      .Where(rf => rf.Facility.IsActive)
+                                      .Select(rf => rf.Facility.Name)
+                                      .ToList()
             }).ToList(),
             TotalCount = paged.TotalCount,
             Page = paged.Page,
             PageSize = paged.PageSize
         };
     }
-    /*public async Task<PagedResult<BookingResponseDto>> GetMyBookingsAsync(
-        int employeeId, MyBookingFilterDto filter)
-    {
-        var paged = await _bookingRepo.GetEmployeeBookingsAsync(employeeId, filter);
-        return new PagedResult<BookingResponseDto>
-        {
-            Items = paged.Items.Select(b => new BookingResponseDto
-            {
-                Id = b.Id,
-                RoomName = b.Room.Name,
-                BranchName = b.Branch?.Name ?? string.Empty,
-                EmployeeName = b.User.FullName,
-                StartTime = b.StartTime,
-                EndTime = b.EndTime,
-                Status = b.Status.ToString(),
-                Priority = b.Priority.ToString(),
-                OverrideReason = b.OverrideReason,
-                Notes = b.Notes,
-                CreatedAt = b.CreatedAt,
-                ActionAt = b.ActionAt,
-                Facilities = b.Room.RoomFacilities
-                                     .Where(rf => rf.Facility.IsActive)
-                                     .Select(rf => rf.Facility.Name)
-                                     .ToList()
-            }).ToList(),
-            TotalCount = paged.TotalCount,
-            Page = paged.Page,
-            PageSize = paged.PageSize
-        };
-    }*/
 
+    // ── Cancel — notifies all admins ──────────────────────────────
     public async Task CancelAsync(int bookingId, int userId)
     {
-        var booking = await _bookingRepo.GetByIdAsync(bookingId)
+        var booking = await _bookingRepo.GetByIdWithDetailsAsync(bookingId)
             ?? throw new Exception("Booking not found.");
 
         if (booking.UserId != userId)
@@ -159,6 +135,18 @@ public class BookingService : IBookingService
         booking.Status = BookingStatus.Cancelled;
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
+
+        // Notify all admins — fire and forget
+        try
+        {
+            await _notifService.NotifyBookingCancelledAsync(
+                bookingId: booking.Id,
+                branchId: booking.BranchId,
+                roomName: booking.Room.Name,
+                employeeName: booking.User.FullName,
+                endTime: booking.EndTime);
+        }
+        catch { /* swallow — cancel itself succeeded */ }
     }
 
     public async Task ApproveAsync(int bookingId, int adminId, bool force = false, string? reason = null)
@@ -182,7 +170,6 @@ public class BookingService : IBookingService
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
 
-        // Auto-reject all other pending bookings for the same room/slot
         var pendingConflicts = await _bookingRepo.GetConflictingPendingBookings(
             booking.RoomId, booking.StartTime, booking.EndTime, bookingId);
 
@@ -213,7 +200,6 @@ public class BookingService : IBookingService
         await _bookingRepo.UpdateAsync(booking);
     }
 
-    // ✅ Receives already-UTC values — DateTime.UtcNow comparison is now correct
     private static void ValidateTimeline(DateTime startUtc, DateTime endUtc)
     {
         if (startUtc >= endUtc) throw new Exception("End time must be after start time.");

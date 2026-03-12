@@ -17,6 +17,10 @@ public class AppDbContext : DbContext
     public DbSet<RoomFacility> RoomFacilities => Set<RoomFacility>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    // ── NEW ──────────────────────────────────────────────────────
+    public DbSet<Notification> Notifications => Set<Notification>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("meetnest");
@@ -43,7 +47,38 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<RoomFacility>()
             .HasKey(rf => new { rf.RoomId, rf.FacilityId });
 
+        // ── Notification configuration ────────────────────────────
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(n => n.Id);
+
+            // UserId → User (required)
+            entity.HasOne(n => n.User)
+                  .WithMany()
+                  .HasForeignKey(n => n.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            // BookingId → Booking (optional, set null on delete)
+            entity.HasOne(n => n.Booking)
+                  .WithMany()
+                  .HasForeignKey(n => n.BookingId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            // RoomId → Room (optional, set null on delete)
+            entity.HasOne(n => n.Room)
+                  .WithMany()
+                  .HasForeignKey(n => n.RoomId)
+                  .IsRequired(false)
+                  .OnDelete(DeleteBehavior.SetNull);
+
+            entity.Property(n => n.Message).HasMaxLength(1000);
+            entity.Property(n => n.Type).HasConversion<int>();
+
+            // Index for fast unread-count queries (most common access pattern)
+            entity.HasIndex(n => new { n.UserId, n.IsRead, n.ScheduledFor });
+        });
+
         base.OnModelCreating(modelBuilder);
     }
-
 }

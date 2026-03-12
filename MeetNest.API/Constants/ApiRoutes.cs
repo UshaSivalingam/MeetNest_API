@@ -19,8 +19,6 @@ public static class ApiRoutes
         public const string GetById = Base + "/branches/{id}";
         public const string Update = Base + "/branches/{id}";
         public const string Delete = Base + "/branches/{id}";
-
-        // Admin: branches with employee + room counts
         public const string GetAllWithStats = Base + "/branches/stats";
     }
 
@@ -33,6 +31,10 @@ public static class ApiRoutes
         public const string Update = Base + "/rooms/{id}";
         public const string Delete = Base + "/rooms/{id}";
         public const string EmployeeRooms = Base + "/rooms/employee";
+
+        // ── NEW: check if a room has active bookings before delete/maintenance
+        // Returns list of active booking summaries so frontend can warn admin
+        public const string ActiveBookings = Base + "/rooms/{id}/active-bookings";
     }
 
     public static class Facility
@@ -58,30 +60,43 @@ public static class ApiRoutes
         public const string MyBookings = Base + "/bookings/my";
         public const string Cancel = Base + "/bookings/{id}/cancel";
 
-        // Admin (existing — kept for backward compat)
+        // Admin (kept for backward compat)
         public const string Approve = Base + "/bookings/{id}/approve";
         public const string Reject = Base + "/bookings/{id}/reject";
     }
 
-    // ── New Admin Routes ──────────────────────────────────────────────────────
-
     public static class Admin
     {
-        // Dashboard stats
+        // Dashboard
         public const string Dashboard = Base + "/admin/dashboard";
 
-        // Admin Booking Management
+        // Booking management
         public const string BookingsGetAll = Base + "/admin/bookings";
         public const string BookingGetById = Base + "/admin/bookings/{id}";
         public const string BookingApprove = Base + "/admin/bookings/{id}/approve";
         public const string BookingReject = Base + "/admin/bookings/{id}/reject";
 
-        // User Management
+        // User management
         public const string UsersGetAll = Base + "/admin/users";
         public const string UsersGetEmployees = Base + "/admin/users/employees";
         public const string UserGetById = Base + "/admin/users/{id}";
         public const string UserUpdate = Base + "/admin/users/{id}";
         public const string UserDeactivate = Base + "/admin/users/{id}/deactivate";
         public const string UserResetPassword = Base + "/admin/users/{id}/reset-password";
+    }
+
+    // ── NEW: Notifications ────────────────────────────────────────
+    public static class Notification
+    {
+        // Due + unread for current admin
+        public const string GetDue = Base + "/notifications";
+        // Unread badge count
+        public const string GetCount = Base + "/notifications/count";
+        // Mark one read
+        public const string MarkRead = Base + "/notifications/{id}/read";
+        // Mark all read
+        public const string MarkAllRead = Base + "/notifications/read-all";
+        // Admin manually sets a reminder for a booking
+        public const string Reminder = Base + "/notifications/reminder";
     }
 }

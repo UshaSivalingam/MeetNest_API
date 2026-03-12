@@ -1,4 +1,7 @@
-﻿using MeetNest.Application.DTOs.Filters;
+﻿// MeetNest.API/Handlers/RoomHandlers.cs
+// ── REPLACE your existing file entirely ──
+
+using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.DTOs.Room;
 using MeetNest.Application.Interfaces.Services;
 using System.Security.Claims;
@@ -27,7 +30,7 @@ public static class RoomHandlers
         return Results.Ok(await service.GetAllAsync(filter));
     }
 
-    // GET /api/rooms/branch/{branchId}?search=&page=1&pageSize=10
+    // GET /api/rooms/branch/{branchId}
     public static async Task<IResult> GetByBranch(
         int branchId,
         IRoomService service,
@@ -66,10 +69,41 @@ public static class RoomHandlers
         return Results.Ok();
     }
 
+    // DELETE /api/rooms/{id}
+    // Returns 409 Conflict if room has active bookings, with structured error body.
+    // Frontend reads the error message to detect "ROOM_HAS_ACTIVE_BOOKINGS" prefix.
     public static async Task<IResult> Delete(int id, IRoomService service)
     {
-        await service.DeleteAsync(id);
-        return Results.Ok();
+        try
+        {
+            await service.DeleteAsync(id);
+            return Results.Ok(new { message = "Room deleted." });
+        }
+        catch (Exception ex) when (ex.Message.StartsWith("ROOM_HAS_ACTIVE_BOOKINGS"))
+        {
+            // 409 Conflict — frontend knows to show the protection modal
+            return Results.Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    // ── NEW: GET /api/rooms/{id}/active-bookings ──────────────────
+    // Called by frontend BEFORE showing delete confirmation.
+    // Returns active booking summaries so the warning modal can show detail.
+    public static async Task<IResult> GetActiveBookings(int id, IRoomService service)
+    {
+        try
+        {
+            var bookings = await service.GetActiveBookingsAsync(id);
+            return Results.Ok(bookings);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
     }
 
     // Employee — simple list for booking picker

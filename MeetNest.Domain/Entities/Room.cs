@@ -1,6 +1,4 @@
-﻿// MeetNest.Domain/Entities/Room.cs
-// ── REPLACE your existing file entirely ──
-
+﻿
 namespace MeetNest.Domain.Entities;
 
 public class Room
@@ -10,10 +8,13 @@ public class Room
     public int Capacity { get; set; }
     public int BranchId { get; set; }
 
-    // ── NEW: Admin decides whether bookings need approval ──────────
     // true  → Booking stays Pending until Admin approves/rejects
     // false → Booking is auto-approved immediately (if slot is free)
     public bool ApprovalRequired { get; set; } = true;
+
+    // true  → Room is under maintenance, NO new bookings allowed at all
+    // false → Room is available for booking
+    public bool UnderMaintenance { get; set; } = false;
 
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
