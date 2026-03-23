@@ -9,7 +9,7 @@ public class CreateBookingDto
     public DateTime StartTime { get; set; }
     public DateTime EndTime { get; set; }
 
-    // ✅ FIX: Frontend sends "Low" / "Medium" / "High" as strings.
+    // Frontend sends "Low" / "Medium" / "High" as strings.
     // STJ deserializes enums from integers by default — so "Medium" and "High"
     // both silently failed to bind and became 0 (Low).
     // JsonStringEnumConverter makes STJ accept string names correctly.

@@ -7,7 +7,6 @@ namespace MeetNest.Application.Interfaces.Repositories;
 
 public interface IBookingRepository
 {
-    // ── Existing ──────────────────────────────────────────────────────────────
     Task AddAsync(Booking booking);
     Task<Booking?> GetByIdAsync(int id);
     Task<List<Booking>> GetRoomBookingsAsync(int roomId);
@@ -23,7 +22,7 @@ public interface IBookingRepository
     Task<PagedAdminBookingsDto> GetAllAsync(AdminBookingFilterDto filter);
     Task<PagedResult<Booking>> GetEmployeeBookingsAsync(int userId, MyBookingFilterDto filter);
 
-    // ── NEW: get other pending bookings that clash with a given room/slot ─────
+    // ──get other pending bookings that clash with a given room/slot ─────
     Task<List<Booking>> GetConflictingPendingBookings(
         int roomId, DateTime startTime, DateTime endTime, int excludeBookingId);
 }

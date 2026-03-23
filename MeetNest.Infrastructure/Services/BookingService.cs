@@ -1,13 +1,11 @@
-﻿// MeetNest.Infrastructure/Services/BookingService.cs
-// ── REPLACE your existing file entirely ──
-
-using MeetNest.Application.DTOs;
+﻿using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Booking;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Application.Interfaces.Services;
 using MeetNest.Domain.Entities;
 using MeetNest.Domain.Enums;
+using MeetNest.Infrastructure.Services;
 
 public class BookingService : IBookingService
 {
@@ -15,17 +13,20 @@ public class BookingService : IBookingService
     private readonly IRoomRepository _roomRepo;
     private readonly IUserRepository _userRepo;
     private readonly INotificationService _notifService;
+    private readonly IEmailService _emailService;
 
     public BookingService(
         IBookingRepository bookingRepo,
         IRoomRepository roomRepo,
         IUserRepository userRepo,
-        INotificationService notifService)
+        INotificationService notifService,
+        IEmailService emailService)
     {
         _bookingRepo = bookingRepo;
         _roomRepo = roomRepo;
         _userRepo = userRepo;
         _notifService = notifService;
+        _emailService = emailService;
     }
 
     public async Task<int> CreateAsync(int userId, CreateBookingDto dto)
@@ -51,17 +52,30 @@ public class BookingService : IBookingService
         if (room.BranchId != user.BranchId)
             throw new Exception("Cannot book a room from another branch.");
 
-        // ── 3. Maintenance check — HARD BLOCK ────────────────────
-        // This is the key fix: if admin marked the room as under maintenance,
-        // no new bookings can be created, period.
+        // ── 3a. Maintenance check ─────────────────────────────────
         if (room.UnderMaintenance)
             throw new Exception("This room is currently under maintenance and cannot be booked.");
 
-        // ── 4. Conflict check — only Approved bookings block ──────
+        // ── 3b. Block date check ──────────────────────────────────
+        // Reject bookings on or after the admin-set block date
+        if (room.BlockFromDate.HasValue)
+        {
+            var blockDate = DateTime.SpecifyKind(room.BlockFromDate.Value.Date, DateTimeKind.Utc);
+            if (startUtc.Date >= blockDate)
+            {
+                var reason = room.BlockReason == "Deletion"
+                    ? "This room is being removed from service"
+                    : "This room is scheduled for maintenance";
+                var fromDate = room.BlockFromDate.Value.ToString("dd MMM yyyy");
+                throw new Exception($"ROOM_BLOCKED:{reason} from {fromDate}. Please choose a date before {fromDate}.");
+            }
+        }
+
+        // ── 4. Conflict check ─────────────────────────────────────
         if (await _bookingRepo.IsRoomBookedAsync(dto.RoomId, startUtc, endUtc))
             throw new Exception("This room already has an approved booking for the selected time slot.");
 
-        // ── 5. Decide initial status based on ApprovalRequired ────
+        // ── 5. Decide initial status ──────────────────────────────
         var initialStatus = room.ApprovalRequired
             ? BookingStatus.Pending
             : BookingStatus.Approved;
@@ -82,6 +96,29 @@ public class BookingService : IBookingService
         };
 
         await _bookingRepo.AddAsync(booking);
+
+        // ── 7. Email — fire and forget ────────────────────────────
+        var approvalRequired = room.ApprovalRequired;
+        var roomName = room.Name;
+        var userEmail = user.Email;
+        var userFullName = user.FullName;
+        var branch = await _userRepo.GetBranchByIdAsync(room.BranchId);
+        var branchName = branch?.Name ?? string.Empty;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (approvalRequired)
+                    await _emailService.SendBookingSubmittedAsync(
+                        userFullName, roomName, branchName, startUtc, endUtc);
+                else
+                    await _emailService.SendInstantBookingConfirmedAsync(
+                        userEmail, userFullName, roomName, branchName, startUtc, endUtc);
+            }
+            catch { }
+        });
+
         return booking.Id;
     }
 
@@ -107,9 +144,9 @@ public class BookingService : IBookingService
                 CreatedAt = b.CreatedAt,
                 ActionAt = b.ActionAt,
                 Facilities = b.Room.RoomFacilities
-                                      .Where(rf => rf.Facility.IsActive)
-                                      .Select(rf => rf.Facility.Name)
-                                      .ToList()
+                                       .Where(rf => rf.Facility.IsActive)
+                                       .Select(rf => rf.Facility.Name)
+                                       .ToList()
             }).ToList(),
             TotalCount = paged.TotalCount,
             Page = paged.Page,
@@ -117,7 +154,6 @@ public class BookingService : IBookingService
         };
     }
 
-    // ── Cancel — notifies all admins ──────────────────────────────
     public async Task CancelAsync(int bookingId, int userId)
     {
         var booking = await _bookingRepo.GetByIdWithDetailsAsync(bookingId)
@@ -136,17 +172,22 @@ public class BookingService : IBookingService
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
 
-        // Notify all admins — fire and forget
+        var capturedBookingId = booking.Id;
+        var capturedBranchId = booking.BranchId;
+        var capturedRoomName = booking.Room.Name;
+        var capturedEmployeeName = booking.User.FullName;
+        var capturedEndTime = booking.EndTime;
+
         try
         {
             await _notifService.NotifyBookingCancelledAsync(
-                bookingId: booking.Id,
-                branchId: booking.BranchId,
-                roomName: booking.Room.Name,
-                employeeName: booking.User.FullName,
-                endTime: booking.EndTime);
+                bookingId: capturedBookingId,
+                branchId: capturedBranchId,
+                roomName: capturedRoomName,
+                employeeName: capturedEmployeeName,
+                endTime: capturedEndTime);
         }
-        catch { /* swallow — cancel itself succeeded */ }
+        catch { }
     }
 
     public async Task ApproveAsync(int bookingId, int adminId, bool force = false, string? reason = null)

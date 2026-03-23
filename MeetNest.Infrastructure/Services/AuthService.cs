@@ -1,4 +1,6 @@
-﻿using MeetNest.Application.DTOs.Auth;
+﻿// MeetNest.Infrastructure/Services/AuthService.cs
+
+using MeetNest.Application.DTOs.Auth;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Application.Interfaces.Security;
 using MeetNest.Application.Interfaces.Services;
@@ -53,14 +55,13 @@ public class AuthService : IAuthService
     // 👩‍💻 Employee Registration
     public async Task RegisterEmployeeAsync(RegisterEmployeeDto dto)
     {
-        // Company domain validation
+        // ── Company domain validation ─────────────────────────────
         var companyDomain = _config["CompanySettings:Domain"];
         var emailDomain = dto.Email.Split('@')[1];
-
         if (!emailDomain.Equals(companyDomain, StringComparison.OrdinalIgnoreCase))
             throw new Exception("Invalid company email domain.");
 
-        // Branch validation
+        // ── Branch validation ─────────────────────────────────────
         if (!dto.BranchId.HasValue)
             throw new Exception("Branch is required.");
 
@@ -68,6 +69,12 @@ public class AuthService : IAuthService
         if (!branchExists)
             throw new Exception("Invalid branch.");
 
+        // ── Duplicate email check ─────────────────────────────────
+        var existing = await _userRepo.GetByEmailAsync(dto.Email);
+        if (existing is not null)
+            throw new Exception("An account with this email already exists.");
+
+        // ── Create user ───────────────────────────────────────────
         var user = new User
         {
             FullName = dto.FullName,
@@ -83,8 +90,6 @@ public class AuthService : IAuthService
         await _userRepo.SaveChangesAsync();
     }
 
-    // 🔑 Login
-    // 🔑 Login
     // 🔑 Login
     public async Task<LoginResponseDto> LoginAsync(LoginDto dto)
     {
@@ -102,24 +107,22 @@ public class AuthService : IAuthService
             AccessToken = accessToken,
             RefreshToken = refreshToken,
             ExpiresAt = DateTime.UtcNow.AddMinutes(30),
-
             User = new UserDto
             {
                 Id = user.Id,
                 FullName = user.FullName,
                 Email = user.Email,
-                Role = user.Role.Name.ToString()  // ✅ THIS FIXES EVERYTHING
+                Role = user.Role.Name.ToString()
             }
         };
     }
 
-    // 🔄 Refresh Token (Not Implemented)
+    // 🔄 Refresh Token
     public Task<LoginResponseDto> RefreshTokenAsync(RefreshTokenDto dto)
     {
         throw new NotImplementedException();
     }
 
-    // 📝 SaveChangesAsync exposed via IUserRepository
     public async Task<int> SaveChangesAsync()
     {
         return await _userRepo.SaveChangesAsync();

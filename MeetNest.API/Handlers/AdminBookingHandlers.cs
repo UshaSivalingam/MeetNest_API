@@ -82,7 +82,7 @@ public static class AdminBookingHandlers
         try
         {
             var adminId = int.Parse(user.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            await service.RejectAsync(id, adminId, body);   // ✅ full body, not body.Reason
+            await service.RejectAsync(id, adminId, body);   
             return Results.Ok(new { Message = "Booking rejected." });
         }
         catch (Exception ex)

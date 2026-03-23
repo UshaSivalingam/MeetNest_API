@@ -1,5 +1,4 @@
-﻿// MeetNest.Application/Interfaces/Repositories/INotificationRepository.cs
-using MeetNest.Domain.Entities;
+﻿using MeetNest.Domain.Entities;
 
 namespace MeetNest.Application.Interfaces.Repositories;
 

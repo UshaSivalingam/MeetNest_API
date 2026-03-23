@@ -1,7 +1,4 @@
-﻿// MeetNest.Infrastructure/Repositories/RoomRepository.cs
-// ── REPLACE your existing file entirely ──
-
-using MeetNest.Application.DTOs;
+﻿using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Domain.Entities;
@@ -70,15 +67,30 @@ public class RoomRepository : IRoomRepository
         return await ToPagedAsync(query, filter.Page, filter.PageSize);
     }
 
+    // ── Employee browse rooms ─────────────────────────────────────
+    // Filters out:
+    //   1. UnderMaintenance = true  (immediate maintenance block)
+    //   2. BlockFromDate <= today   (scheduled block date has arrived)
+    //      — covers both Deletion and Maintenance block reasons
+    //      — before the block date, room is still visible with warning badge
     public async Task<List<Room>> GetByBranchIdSimpleAsync(int branchId)
-        => await _context.Rooms
+    {
+        var today = DateTime.UtcNow.Date;
+
+        return await _context.Rooms
             .Include(r => r.Branch)
             .Include(r => r.RoomFacilities).ThenInclude(rf => rf.Facility)
-            .Where(r => r.BranchId == branchId && r.IsActive && !r.UnderMaintenance)
+            .Where(r =>
+                r.BranchId == branchId &&
+                r.IsActive &&
+                !r.UnderMaintenance &&
+                // Hide room once block date has arrived (Deletion or Maintenance)
+                !(r.BlockFromDate.HasValue && r.BlockFromDate.Value.Date <= today))
             .OrderBy(r => r.Name)
             .ToListAsync();
+    }
 
-    // ── NEW: active bookings for a room ──────────────────────────
+    // ── Active bookings for a room ────────────────────────────────
     // Returns Approved or Pending bookings whose EndTime > UtcNow.
     // These are the bookings that BLOCK room deletion/maintenance.
     public async Task<List<Booking>> GetActiveBookingsForRoomAsync(int roomId)

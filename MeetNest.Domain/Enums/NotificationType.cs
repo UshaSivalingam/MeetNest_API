@@ -1,5 +1,4 @@
-﻿// MeetNest.Domain/Enums/NotificationType.cs
-namespace MeetNest.Domain.Enums;
+﻿namespace MeetNest.Domain.Enums;
 
 public enum NotificationType
 {

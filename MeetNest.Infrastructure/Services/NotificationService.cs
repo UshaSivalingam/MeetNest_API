@@ -1,5 +1,4 @@
-﻿// MeetNest.Infrastructure/Services/NotificationService.cs
-using MeetNest.Application.DTOs.Notification;
+﻿using MeetNest.Application.DTOs.Notification;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Application.Interfaces.Services;
 using MeetNest.Domain.Entities;
@@ -14,15 +13,18 @@ public class NotificationService : INotificationService
     private readonly INotificationRepository _notifRepo;
     private readonly IBookingRepository _bookingRepo;
     private readonly AppDbContext _db;
+    private readonly IEmailService _emailService;
 
     public NotificationService(
         INotificationRepository notifRepo,
         IBookingRepository bookingRepo,
-        AppDbContext db)
+        AppDbContext db,
+        IEmailService emailService)
     {
         _notifRepo = notifRepo;
         _bookingRepo = bookingRepo;
         _db = db;
+        _emailService = emailService;
     }
 
     // ── GET: due + unread notifications for a user ────────────────
@@ -36,16 +38,19 @@ public class NotificationService : INotificationService
     public async Task<int> GetUnreadCountAsync(int userId)
         => await _notifRepo.GetUnreadCountAsync(userId);
 
-    // ── MARK one as read ─────────────────────────────────────────
+    // ── MARK one as read ──────────────────────────────────────────
     public async Task MarkReadAsync(int notificationId, int userId)
         => await _notifRepo.MarkReadAsync(notificationId);
 
-    // ── MARK all as read ─────────────────────────────────────────
+    // ── MARK all as read ──────────────────────────────────────────
     public async Task MarkAllReadAsync(int userId)
         => await _notifRepo.MarkAllReadAsync(userId);
 
     // ── Admin manually sets a reminder for booking end ────────────
     // Called via POST /api/notifications/reminder
+    // Bell notification is saved with ScheduledFor = booking.EndTime
+    // Email is NOT sent here — it fires from NotificationReminderBackgroundService
+    // when the ScheduledFor time arrives
     public async Task CreateReminderAsync(int bookingId, int adminId)
     {
         var booking = await _bookingRepo.GetByIdWithDetailsAsync(bookingId)
@@ -59,22 +64,28 @@ public class NotificationService : INotificationService
             BookingId = bookingId,
             RoomId = booking.RoomId,
             IsRead = false,
-            ScheduledFor = booking.EndTime,  // show exactly at meeting end
+            ScheduledFor = booking.EndTime,   // bell appears at meeting end
             CreatedAt = DateTime.UtcNow,
         };
 
         await _notifRepo.AddAsync(notification);
+        // Email fires from background service when ScheduledFor <= now
     }
 
-    // ── Internal: called by BookingService.CancelAsync ───────────
-    // Notifies ALL admins immediately when an employee cancels
+    // ── Internal: called by BookingService.CancelAsync ────────────
+    // Bell + email both fire immediately when employee cancels
     public async Task NotifyBookingCancelledAsync(
-        int bookingId, int branchId, string roomName, string employeeName, DateTime endTime)
+        int bookingId, int branchId, string roomName,
+        string employeeName, DateTime endTime)
     {
-        // Get all active admins (admins are global, not branch-scoped)
+        // Load booking details for branch name
+        var booking = await _bookingRepo.GetByIdWithDetailsAsync(bookingId);
+        var branchName = booking?.Branch?.Name ?? string.Empty;
+        var startTime = booking?.StartTime ?? DateTime.UtcNow;
+
+        // Get all active admins for bell notification
         var admins = await _db.Users
-            .Include(u => u.Role)
-            .Where(u => u.IsActive && u.Role.Name == UserRole.Admin)
+            .Where(u => u.IsActive && u.RoleId == (int)UserRole.Admin)
             .ToListAsync();
 
         foreach (var admin in admins)
@@ -92,14 +103,26 @@ public class NotificationService : INotificationService
             };
             await _notifRepo.AddAsync(notification);
         }
+
+        // Email SuperAdmin immediately — fire and forget
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _emailService.SendBookingCancelledToAdminAsync(
+                    employeeName, roomName, branchName, startTime, endTime);
+            }
+            catch { /* swallow — notification itself succeeded */ }
+        });
     }
 
     // ── Internal: called by AdminBookingService.ApproveAsync ──────
-    // Schedules a reminder at booking.EndTime for the approving admin
+    // Schedules bell at booking.EndTime
+    // Email fires from background service when ScheduledFor <= now
     public async Task ScheduleMeetingEndReminderAsync(
         int bookingId, int adminId, string roomName, DateTime endTime)
     {
-        // Avoid duplicate reminders: check if one already exists for this booking+admin
+        // Avoid duplicate reminders
         var already = await _db.Notifications.AnyAsync(n =>
             n.BookingId == bookingId &&
             n.UserId == adminId &&
@@ -115,13 +138,14 @@ public class NotificationService : INotificationService
             BookingId = bookingId,
             RoomId = null,
             IsRead = false,
-            ScheduledFor = endTime,           // show at meeting end time
+            ScheduledFor = endTime,           // bell appears at meeting end
             CreatedAt = DateTime.UtcNow,
         };
         await _notifRepo.AddAsync(notification);
+        // Email fires from background service when ScheduledFor <= now
     }
 
-    // ── Mapping ──────────────────────────────────────────────────
+    // ── Mapping ───────────────────────────────────────────────────
     private static NotificationResponseDto MapToDto(Notification n) => new()
     {
         Id = n.Id,

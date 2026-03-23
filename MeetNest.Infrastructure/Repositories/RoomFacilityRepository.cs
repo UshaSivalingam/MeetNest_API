@@ -1,5 +1,4 @@
-﻿
-using MeetNest.Application.Interfaces.Repositories;
+﻿using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Domain.Entities;
 using MeetNest.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;

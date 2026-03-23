@@ -1,7 +1,4 @@
-﻿// MeetNest.Infrastructure/Services/RoomService.cs
-// ── REPLACE your existing file entirely ──
-
-using MeetNest.Application.DTOs;
+﻿using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.DTOs.Room;
 using MeetNest.Application.Interfaces.Repositories;
@@ -63,16 +60,11 @@ public class RoomService(IRoomRepository repo) : IRoomService
     }
 
     // ── Update — GUARDED on maintenance flip ──────────────────────
-    // If the admin is turning ON maintenance (false → true) while the room
-    // has active future bookings, we block it with the same error prefix
-    // the frontend already knows how to handle (ROOM_HAS_ACTIVE_BOOKINGS).
     public async Task UpdateAsync(int id, UpdateRoomDto dto)
     {
         var room = await repo.GetByIdAsync(id)
             ?? throw new Exception("Room not found.");
 
-        // ── Maintenance-flip guard ─────────────────────────────────
-        // Only check when admin is ENABLING maintenance (not disabling it)
         bool turningMaintenanceOn = !room.UnderMaintenance && dto.UnderMaintenance;
 
         if (turningMaintenanceOn)
@@ -80,14 +72,12 @@ public class RoomService(IRoomRepository repo) : IRoomService
             var activeBookings = await repo.GetActiveBookingsForRoomAsync(id);
             if (activeBookings.Count > 0)
             {
-                // Same prefix as delete guard — frontend ProtectedRoomModal catches this
                 throw new Exception(
                     $"ROOM_HAS_ACTIVE_BOOKINGS:{activeBookings.Count} active booking(s) prevent maintenance mode. " +
                     $"The latest booking ends at {activeBookings.Max(b => b.EndTime):yyyy-MM-dd HH:mm} UTC.");
             }
         }
 
-        // ── Apply changes ─────────────────────────────────────────
         room.Name = dto.Name.Trim();
         room.Capacity = dto.Capacity;
         room.ApprovalRequired = dto.ApprovalRequired;
@@ -114,6 +104,42 @@ public class RoomService(IRoomRepository repo) : IRoomService
         await repo.DeleteAsync(room);
     }
 
+    // ── Set Block Date ────────────────────────────────────────────
+    // Admin sets a future date from which no new bookings are allowed.
+    // Reason is either "Maintenance" or "Deletion".
+    // Existing bookings before blockFromDate are NOT affected.
+    public async Task SetBlockDateAsync(int id, DateTime blockFromDate, string reason)
+    {
+        var room = await repo.GetByIdAsync(id)
+            ?? throw new Exception("Room not found.");
+
+        if (blockFromDate.Date <= DateTime.UtcNow.Date)
+            throw new Exception("Block date must be in the future.");
+
+        if (reason != "Maintenance" && reason != "Deletion")
+            throw new Exception("Block reason must be 'Maintenance' or 'Deletion'.");
+
+        room.BlockFromDate = DateTime.SpecifyKind(blockFromDate.Date, DateTimeKind.Utc);
+        room.BlockReason = reason;
+        room.UpdatedAt = DateTime.UtcNow;
+
+        await repo.UpdateAsync(room);
+    }
+
+    // ── Remove Block Date ─────────────────────────────────────────
+    // Admin removes the block — room is fully open for bookings again.
+    public async Task RemoveBlockDateAsync(int id)
+    {
+        var room = await repo.GetByIdAsync(id)
+            ?? throw new Exception("Room not found.");
+
+        room.BlockFromDate = null;
+        room.BlockReason = null;
+        room.UpdatedAt = DateTime.UtcNow;
+
+        await repo.UpdateAsync(room);
+    }
+
     // ── Mapping ───────────────────────────────────────────────────
     private static PagedResult<RoomResponseDto> MapPaged(PagedResult<Room> paged) => new()
     {
@@ -134,6 +160,8 @@ public class RoomService(IRoomRepository repo) : IRoomService
         CreatedAt = r.CreatedAt,
         ApprovalRequired = r.ApprovalRequired,
         UnderMaintenance = r.UnderMaintenance,
+        BlockFromDate = r.BlockFromDate,
+        BlockReason = r.BlockReason,
         Facilities = r.RoomFacilities?
             .Where(rf => rf.Facility.IsActive)
             .Select(rf => new RoomFacilityDto

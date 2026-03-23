@@ -1,5 +1,4 @@
-﻿// MeetNest.API/Endpoints/NotificationEndpoints.cs
-using MeetNest.API.Handlers;
+﻿using MeetNest.API.Handlers;
 
 namespace MeetNest.API.Endpoints;
 

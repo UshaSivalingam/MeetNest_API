@@ -6,7 +6,6 @@ namespace MeetNest.Application.Interfaces.Repositories;
 
 public interface IFacilityRepository
 {
-    // ── Existing (unchanged) ──────────────────────────────────────────────────
     Task AddAsync(Facility facility);
     Task<Facility?> GetByIdAsync(int id);
     Task<bool> ExistsByNameAsync(string name);

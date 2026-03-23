@@ -1,5 +1,4 @@
-﻿// MeetNest.API/Handlers/NotificationHandlers.cs
-using MeetNest.Application.Interfaces.Services;
+﻿using MeetNest.Application.Interfaces.Services;
 using System.Security.Claims;
 
 namespace MeetNest.API.Handlers;

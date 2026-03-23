@@ -32,7 +32,7 @@ public static class ApiRoutes
         public const string Delete = Base + "/rooms/{id}";
         public const string EmployeeRooms = Base + "/rooms/employee";
 
-        // ── NEW: check if a room has active bookings before delete/maintenance
+        // ── check if a room has active bookings before delete/maintenance
         // Returns list of active booking summaries so frontend can warn admin
         public const string ActiveBookings = Base + "/rooms/{id}/active-bookings";
     }
@@ -85,7 +85,7 @@ public static class ApiRoutes
         public const string UserResetPassword = Base + "/admin/users/{id}/reset-password";
     }
 
-    // ── NEW: Notifications ────────────────────────────────────────
+    // ── Notifications ────────────────────────────────────────
     public static class Notification
     {
         // Due + unread for current admin

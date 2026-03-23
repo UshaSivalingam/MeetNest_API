@@ -9,10 +9,12 @@ public class RoomResponseDto
     public string BranchName { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
-
-    // ── NEW: Returned so the frontend can show the badge ──────────
     public bool ApprovalRequired { get; set; }
     public bool UnderMaintenance { get; set; }
+
+    // ── Block scheduling ──────────────────────────────────────
+    public DateTime? BlockFromDate { get; set; }
+    public string? BlockReason { get; set; }   // ("Maintenance" or "Deletion")
 
     public List<RoomFacilityDto> Facilities { get; set; } = new();
 }

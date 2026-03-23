@@ -1,5 +1,4 @@
-﻿// MeetNest.Application/Interfaces/Services/INotificationService.cs
-using MeetNest.Application.DTOs.Notification;
+﻿using MeetNest.Application.DTOs.Notification;
 
 namespace MeetNest.Application.Interfaces.Services;
 

@@ -109,6 +109,11 @@ public class UserRepository : IUserRepository
 
     public async Task<int> SaveChangesAsync()
         => await _context.SaveChangesAsync();
+
+    public async Task<Branch?> GetBranchByIdAsync(int branchId)
+    {
+        return await _context.Branches.FindAsync(branchId);
+    }
 }
 
 

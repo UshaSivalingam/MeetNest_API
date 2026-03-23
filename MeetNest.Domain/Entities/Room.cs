@@ -1,5 +1,4 @@
-﻿
-namespace MeetNest.Domain.Entities;
+﻿namespace MeetNest.Domain.Entities;
 
 public class Room
 {
@@ -15,6 +14,14 @@ public class Room
     // true  → Room is under maintenance, NO new bookings allowed at all
     // false → Room is available for booking
     public bool UnderMaintenance { get; set; } = false;
+
+    // ── Block scheduling ──────────────────────────────────────────
+    // When set, no new bookings are allowed on or after this date.
+    // Existing bookings before this date are NOT affected.
+    public DateTime? BlockFromDate { get; set; }
+
+    // "Maintenance" or "Deletion" — shown to employees as a warning
+    public string? BlockReason { get; set; }
 
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

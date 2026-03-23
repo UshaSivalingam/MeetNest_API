@@ -3,7 +3,5 @@
     public string Name { get; set; } = string.Empty;
     public int Capacity { get; set; }
     public bool ApprovalRequired { get; set; } = true;
-
-    // ── NEW ──────────────────────────────────────────────────────
     public bool UnderMaintenance { get; set; } = false;
 }

@@ -6,7 +6,6 @@ namespace MeetNest.Application.Interfaces.Services;
 
 public interface IRoomService
 {
-    // ── Existing (unchanged) ──────────────────────────────────────
     Task<PagedResult<RoomResponseDto>> GetAllAsync(RoomFilterDto filter);
     Task<PagedResult<RoomResponseDto>> GetByBranchAsync(int branchId, RoomFilterDto filter);
     Task<RoomResponseDto?> GetByIdAsync(int id);
@@ -15,8 +14,10 @@ public interface IRoomService
     Task DeleteAsync(int id);
     Task<List<RoomResponseDto>> GetByBranchIdSimpleAsync(int branchId);
 
-    // ── NEW: check active bookings before delete/maintenance ──────
-    // Returns a summary list so the frontend can show the warning modal.
-    // "Active" = Approved or Pending bookings with EndTime > now.
+    // Check active bookings before delete/maintenance
     Task<List<ActiveBookingDto>> GetActiveBookingsAsync(int roomId);
+
+    // ── Block scheduling ──────────────────────────────────────
+    Task SetBlockDateAsync(int id, DateTime blockFromDate, string reason);  // ← NEW
+    Task RemoveBlockDateAsync(int id);                                       // ← NEW
 }

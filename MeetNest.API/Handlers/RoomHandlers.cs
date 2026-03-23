@@ -1,14 +1,9 @@
-﻿// MeetNest.API/Handlers/RoomHandlers.cs
-// ── REPLACE your existing file entirely ──
-
-using MeetNest.Application.DTOs.Filters;
+﻿using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.DTOs.Room;
 using MeetNest.Application.Interfaces.Services;
-using System.Security.Claims;
-
 public static class RoomHandlers
 {
-    // GET /api/rooms?search=&branchId=&minCap=&maxCap=&page=1&pageSize=10
+    // GET /api/rooms
     public static async Task<IResult> GetAll(
         IRoomService service,
         string? search = null,
@@ -70,8 +65,6 @@ public static class RoomHandlers
     }
 
     // DELETE /api/rooms/{id}
-    // Returns 409 Conflict if room has active bookings, with structured error body.
-    // Frontend reads the error message to detect "ROOM_HAS_ACTIVE_BOOKINGS" prefix.
     public static async Task<IResult> Delete(int id, IRoomService service)
     {
         try
@@ -81,7 +74,6 @@ public static class RoomHandlers
         }
         catch (Exception ex) when (ex.Message.StartsWith("ROOM_HAS_ACTIVE_BOOKINGS"))
         {
-            // 409 Conflict — frontend knows to show the protection modal
             return Results.Conflict(new { error = ex.Message });
         }
         catch (Exception ex)
@@ -90,15 +82,42 @@ public static class RoomHandlers
         }
     }
 
-    // ── NEW: GET /api/rooms/{id}/active-bookings ──────────────────
-    // Called by frontend BEFORE showing delete confirmation.
-    // Returns active booking summaries so the warning modal can show detail.
+    // GET /api/rooms/{id}/active-bookings
     public static async Task<IResult> GetActiveBookings(int id, IRoomService service)
     {
         try
         {
             var bookings = await service.GetActiveBookingsAsync(id);
             return Results.Ok(bookings);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    // PUT /api/rooms/{id}/block
+    // Body: { "blockFromDate": "2026-04-08", "reason": "Maintenance" | "Deletion" }
+    public static async Task<IResult> SetBlock(int id, SetBlockDto dto, IRoomService service)
+    {
+        try
+        {
+            await service.SetBlockDateAsync(id, dto.BlockFromDate, dto.Reason);
+            return Results.Ok(new { message = $"Room blocked from {dto.BlockFromDate:dd MMM yyyy} — {dto.Reason}." });
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+    }
+
+    // DELETE /api/rooms/{id}/block
+    public static async Task<IResult> RemoveBlock(int id, IRoomService service)
+    {
+        try
+        {
+            await service.RemoveBlockDateAsync(id);
+            return Results.Ok(new { message = "Block date removed. Room is fully open for bookings." });
         }
         catch (Exception ex)
         {
@@ -115,3 +134,6 @@ public static class RoomHandlers
         return Results.Ok(rooms);
     }
 }
+
+// ── DTO for block request body ────────────────────────────────────
+public record SetBlockDto(DateTime BlockFromDate, string Reason);

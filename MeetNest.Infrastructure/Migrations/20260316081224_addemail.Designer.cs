@@ -3,6 +3,7 @@ using System;
 using MeetNest.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MeetNest.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260316081224_addemail")]
+    partial class addemail
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -270,12 +273,6 @@ namespace MeetNest.Infrastructure.Migrations
 
                     b.Property<bool>("ApprovalRequired")
                         .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("BlockFromDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("BlockReason")
-                        .HasColumnType("text");
 
                     b.Property<int>("BranchId")
                         .HasColumnType("integer");

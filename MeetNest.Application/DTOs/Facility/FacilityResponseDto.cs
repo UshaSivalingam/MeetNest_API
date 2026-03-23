@@ -5,5 +5,5 @@ public class FacilityResponseDto
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public string Icon { get; set; } = "🔧";   // ← NEW
+    public string Icon { get; set; } = "🔧"; 
 }

@@ -29,4 +29,5 @@ public class Notification
     public DateTime? ScheduledFor { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? EmailSentAt { get; set; }
 }

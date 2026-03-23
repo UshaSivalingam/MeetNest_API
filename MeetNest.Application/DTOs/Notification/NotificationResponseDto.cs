@@ -1,5 +1,4 @@
-﻿// MeetNest.Application/DTOs/Notification/NotificationDto.cs
-using MeetNest.Domain.Enums;
+﻿using MeetNest.Domain.Enums;
 
 namespace MeetNest.Application.DTOs.Notification;
 

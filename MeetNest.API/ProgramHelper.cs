@@ -53,6 +53,8 @@ public static class ProgramHelper
         services.AddScoped<IFacilityService, FacilityService>();
         services.AddScoped<IRoomFacilityService, RoomFacilityService>();
         services.AddScoped<IBookingService, BookingService>();
+        services.AddScoped<IEmailService, EmailService>();
+        services.AddHostedService<NotificationReminderBackgroundService>();
 
         // -------------------- ADMIN SERVICES --------------------
         services.AddScoped<IAdminDashboardService, AdminDashboardService>();

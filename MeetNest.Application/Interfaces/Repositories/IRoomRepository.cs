@@ -1,7 +1,4 @@
-﻿// MeetNest.Application/Interfaces/Repositories/IRoomRepository.cs
-// ── REPLACE your existing file entirely ──
-
-using MeetNest.Application.DTOs;
+﻿using MeetNest.Application.DTOs;
 using MeetNest.Application.DTOs.Filters;
 using MeetNest.Application.DTOs.Room;
 using MeetNest.Domain.Entities;
@@ -10,7 +7,6 @@ namespace MeetNest.Application.Interfaces.Repositories;
 
 public interface IRoomRepository
 {
-    // ── Existing (unchanged) ──────────────────────────────────────
     Task AddAsync(Room room);
     Task<Room?> GetByIdAsync(int id);
     Task<Room?> GetByIdWithFacilitiesAsync(int id);
@@ -21,7 +17,7 @@ public interface IRoomRepository
     Task<PagedResult<Room>> GetByBranchIdAsync(int branchId, RoomFilterDto filter);
     Task<List<Room>> GetByBranchIdSimpleAsync(int branchId);
 
-    // ── NEW: returns future approved+pending bookings for a room ──
+    // ── returns future approved+pending bookings for a room ──
     // Used by RoomService before allowing delete or maintenance mode.
     // "Active" means: Status is Approved or Pending AND EndTime > UtcNow
     Task<List<Booking>> GetActiveBookingsForRoomAsync(int roomId);

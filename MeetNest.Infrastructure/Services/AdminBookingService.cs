@@ -1,24 +1,31 @@
-﻿// MeetNest.Infrastructure/Services/AdminBookingService.cs
-// ── REPLACE your existing file entirely ──
-
-using MeetNest.Application.DTOs.Admin;
+﻿using MeetNest.Application.DTOs.Admin;
 using MeetNest.Application.Interfaces.Repositories;
 using MeetNest.Application.Interfaces.Services;
 using MeetNest.Domain.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace MeetNest.Infrastructure.Services;
 
 public class AdminBookingService : IAdminBookingService
 {
     private readonly IBookingRepository _bookingRepo;
+    private readonly IUserRepository _userRepo;
     private readonly INotificationService _notifService;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<AdminBookingService> _logger;
 
     public AdminBookingService(
         IBookingRepository bookingRepo,
-        INotificationService notifService)   // ← NEW dependency
+        IUserRepository userRepo,
+        INotificationService notifService,
+        IEmailService emailService,
+        ILogger<AdminBookingService> logger)
     {
         _bookingRepo = bookingRepo;
+        _userRepo = userRepo;
         _notifService = notifService;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     public async Task<PagedAdminBookingsDto> GetAllAsync(AdminBookingFilterDto filter)
@@ -52,9 +59,9 @@ public class AdminBookingService : IAdminBookingService
             ActionAt = booking.ActionAt,
             CreatedAt = booking.CreatedAt,
             Facilities = booking.Room.RoomFacilities
-                                            .Where(rf => rf.Facility.IsActive)
-                                            .Select(rf => rf.Facility.Name)
-                                            .ToList(),
+                                         .Where(rf => rf.Facility.IsActive)
+                                         .Select(rf => rf.Facility.Name)
+                                         .ToList(),
             ConflictingBookings = conflicts.Select(c => new ConflictingBookingDto
             {
                 Id = c.Id,
@@ -69,7 +76,7 @@ public class AdminBookingService : IAdminBookingService
         };
     }
 
-    // ── Approve — now schedules an end-time reminder ──────────────
+    // ── Approve ───────────────────────────────────────────────────
     public async Task ApproveAsync(int bookingId, int adminId, BookingActionBodyDto body)
     {
         var booking = await _bookingRepo.GetByIdWithDetailsAsync(bookingId)
@@ -105,8 +112,7 @@ public class AdminBookingService : IAdminBookingService
             await _bookingRepo.UpdateAsync(conflict);
         }
 
-        // ── Schedule end-time reminder for the approving admin ────
-        // Fire-and-forget — don't let notification failure break approval
+        // ── Schedule bell reminder ────────────────────────────────
         try
         {
             await _notifService.ScheduleMeetingEndReminderAsync(
@@ -115,15 +121,64 @@ public class AdminBookingService : IAdminBookingService
                 roomName: booking.Room.Name,
                 endTime: booking.EndTime);
         }
-        catch
+        catch (Exception ex)
         {
-            // Swallow — approval itself succeeded
+            _logger.LogWarning(ex, "Failed to schedule bell reminder for booking {Id}", bookingId);
         }
+
+        // ── Load ALL user data NOW while DbContext is still alive ─
+        // Task.Run runs after the HTTP request ends — DbContext is
+        // disposed by then. Never call _userRepo inside Task.Run.
+        var approvedEmployee = await _userRepo.GetByIdAsync(booking.UserId);
+
+        // Load each auto-rejected employee upfront too
+        var loserData = new List<(string Email, string FullName, DateTime Start, DateTime End)>();
+        foreach (var conflict in pendingConflicts)
+        {
+            var loser = await _userRepo.GetByIdAsync(conflict.UserId);
+            if (loser is not null)
+                loserData.Add((loser.Email, loser.FullName, conflict.StartTime, conflict.EndTime));
+        }
+
+        // ── Capture plain values for Task.Run ─────────────────────
+        var roomName = booking.Room.Name;
+        var branchName = booking.Branch?.Name ?? string.Empty;
+        var startTime = booking.StartTime;
+        var endTime = booking.EndTime;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Email approved employee
+                if (approvedEmployee is not null)
+                {
+                    await _emailService.SendBookingApprovedAsync(
+                        approvedEmployee.Email, approvedEmployee.FullName,
+                        roomName, branchName, startTime, endTime);
+                    _logger.LogInformation("Approval email sent to {Email}", approvedEmployee.Email);
+                }
+
+                // Email each auto-rejected employee
+                foreach (var (email, fullName, cStart, cEnd) in loserData)
+                {
+                    await _emailService.SendBookingAutoRejectedAsync(
+                        email, fullName, roomName, cStart, cEnd);
+                    _logger.LogInformation("Auto-reject email sent to {Email}", email);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Email failed in ApproveAsync for booking {Id}: {Message}",
+                    bookingId, ex.Message);
+            }
+        });
     }
 
+    // ── Reject ────────────────────────────────────────────────────
     public async Task RejectAsync(int bookingId, int adminId, BookingActionBodyDto body)
     {
-        var booking = await _bookingRepo.GetByIdAsync(bookingId)
+        var booking = await _bookingRepo.GetByIdWithDetailsAsync(bookingId)
             ?? throw new Exception("Booking not found.");
 
         if (booking.Status != BookingStatus.Pending)
@@ -135,5 +190,30 @@ public class AdminBookingService : IAdminBookingService
         booking.OverrideReason = body.Reason;
         booking.UpdatedAt = DateTime.UtcNow;
         await _bookingRepo.UpdateAsync(booking);
+
+        // ── Load user data NOW while DbContext is still alive ─────
+        var employee = await _userRepo.GetByIdAsync(booking.UserId);
+
+        // Capture plain values
+        var roomName = booking.Room?.Name ?? "your room";
+        var reason = body.Reason;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (employee is not null)
+                {
+                    await _emailService.SendBookingRejectedAsync(
+                        employee.Email, employee.FullName, roomName, reason);
+                    _logger.LogInformation("Rejection email sent to {Email}", employee.Email);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Email failed in RejectAsync for booking {Id}: {Message}",
+                    bookingId, ex.Message);
+            }
+        });
     }
 }
