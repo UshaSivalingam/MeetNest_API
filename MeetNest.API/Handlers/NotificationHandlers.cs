@@ -5,7 +5,7 @@ namespace MeetNest.API.Handlers;
 
 public static class NotificationHandlers
 {
-    // GET /api/notifications — returns due + unread notifications for the logged-in admin
+    // GET /api/notifications —- returns due + unread notifications for the logged-in admin
     public static async Task<IResult> GetDue(
         ClaimsPrincipal user,
         INotificationService service)
